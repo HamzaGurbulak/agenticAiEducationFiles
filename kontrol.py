@@ -1,5 +1,6 @@
-"""Ortam kontrolü (Hafta 1'de eklendi, Hafta 2'de genişletildi): Python, paketler, .env, veri,
-mock API uç noktaları, Ollama, asistan akışı ve Claude erişimi.
+"""Ortam kontrolü (Hafta 1'de eklendi, Hafta 2, 3 ve 4'te genişletildi): Python, paketler, .env, veri,
+mock API uç noktaları, Ollama (sohbet + embedding modeli), prosedür indeksi, prompt şablonları, maskeleme,
+asistan akışı ve Claude erişimi.
 Her haftanın başında ve sonunda çalıştırın: python kontrol.py
 Her madde ✅ (tamam), ⚠️ (uyarı, devam edilebilir) veya ❌ (düzeltilmeli) olarak raporlanır.
 """
@@ -70,19 +71,19 @@ def veri_dosyalari():
     from asistan.kategoriler import KATEGORILER
 
     dosyalar = ["data/musteriler.json", "data/kart_islemleri.json", "data/hesap_durumu.json",
-                "data/kredi_basvurulari.json", "data/gecmis_talepler.json", "data/talepler.csv",
+                "data/kredi_basvurulari.json", "data/gecmis_talepler.json", "data/harici_veri.json", "data/talepler.csv",
                 "eval/test_seti.csv", "eval/ortak_set.csv"]
     eksik = [d for d in dosyalar if not (PROJE_KOKU / d).exists()]
     if eksik:
         raise RuntimeError(f"eksik: {', '.join(eksik)} (veri için: python data/uret.py)")
-    # Her ajan kategorisinin prosedür klasörü dolu olmalı (Hafta 3'te RAG bunları okuyacak)
+    # Her ajan kategorisinin prosedür klasörü dolu olmalı (prosedur_ara bunları arar)
     for ad, kategori in KATEGORILER.items():
         if not list(kategori["prosedur_klasoru"].glob("*.md")):
             raise RuntimeError(f"{ad} kategorisinin prosedür klasörü boş: {kategori['prosedur_klasoru']}")
     with open(PROJE_KOKU / "eval" / "test_seti.csv", encoding="utf-8") as f:
         kolonlar = next(csv.reader(f))
     beklenen = ["id", "talep", "musteri_no", "beklenen_kategori", "ikinci_konu", "beklenen_davranis",
-                "beklenen_araclar", "beklenen_kaynak", "zorluk", "not"]
+                "beklenen_araclar", "beklenen_kaynak", "zorluk", "olmasi_gereken", "olmamasi_gereken", "not"]
     if kolonlar != beklenen:
         raise RuntimeError(f"test_seti.csv kolonları beklenen formata uymuyor: {kolonlar}")
     prosedur_sayisi = len(list((PROJE_KOKU / "data" / "prosedurler").rglob("*.md")))
@@ -103,13 +104,21 @@ def mock_api():
     # Hafta 2 uç noktaları: eski bir mock API süreci açık kalmışsa burada yakalanır
     from asistan.araclar import OKUMA_ARACLARI, musteri_oturumu
 
+    from asistan.araclar import ApiHatasi
+
     yazilmamis = []
     with musteri_oturumu("M0001"):
         for arac in OKUMA_ARACLARI:
+            if arac.name == "prosedur_ara":  # API'yi değil indeksi kullanır: ayrı kontrol ("Prosedür indeksi")
+                continue
             try:
-                arac.invoke({"sorgu": "deneme"} if arac.name == "prosedur_ara" else {})
-            except NotImplementedError:  # lab görevi henüz yapılmamış (ör. TODO (Lab 3): hesap_durumu)
+                arac.invoke({})
+            except NotImplementedError:  # lab görevi henüz yapılmamış
                 yazilmamis.append(arac.name)
+            except ApiHatasi as e:
+                if "Not Found" in str(e):  # uç nokta yok: kod yeni, çalışan mock API süreci eski
+                    raise RuntimeError(f"{arac.name} ucu yok; eski mock API açık -> pkill -f uvicorn ve yeniden başlatın")
+                raise
     if yazilmamis:
         raise Uyari(f"API ayakta, ama şu araçlar henüz yazılmamış: {', '.join(yazilmamis)} (lab görevi)")
     return f"{url} ({cevap.json()['musteri_sayisi']} müşteri, {len(OKUMA_ARACLARI)} okuma aracı, hata oranı {cevap.json().get('hata_orani')})"
@@ -125,10 +134,61 @@ def ollama_modelleri():
     except httpx.ConnectError:
         raise RuntimeError(f"{url} erişilemiyor. Ollama çalışıyor mu? OLLAMA_URL doğru mu?")
     yuklu = {m["name"] for m in modeller} | {m["name"].removesuffix(":latest") for m in modeller}
-    eksik = [m for m in (ayar("OLLAMA_MODEL"), ayar("EMBED_MODEL")) if m not in yuklu]
-    if eksik:
-        raise RuntimeError(f"indirilmemiş: {', '.join(eksik)} -> ollama pull {eksik[0]}")
+    if ayar("OLLAMA_MODEL") not in yuklu:
+        raise RuntimeError(f"sohbet modeli indirilmemiş -> ollama pull {ayar('OLLAMA_MODEL')}")
+    if ayar("EMBED_MODEL") not in yuklu:
+        raise RuntimeError(f"embedding modeli ({ayar('EMBED_MODEL')}) indirilmemiş; prosedür araması çalışmaz "
+                           f"-> ollama pull {ayar('EMBED_MODEL')} (bge-m3 yaklaşık 1,2 GB)")
     return f"{ayar('OLLAMA_MODEL')}, {ayar('EMBED_MODEL')}"
+
+
+def prosedur_indeksi():
+    """Hafta 3: FAISS indeksi kurulmuş mu, aynı embedding modeliyle mi, arama sonuç veriyor mu?"""
+    from asistan.rag.arama import SKOR_ESIGI, ara, indeksi_yukle
+
+    komut = "PYTHONPATH=src python -m asistan.rag.indeksle --chunk 400 --ortusme 50"
+    indeks, _ = indeksi_yukle()  # indeks yoksa hata mesajı kurma komutunu söyler
+    sonuc = ara("hesap işletim ücreti muafiyet", ["hesap"], k=1)
+    if not sonuc or sonuc[0]["skor"] < SKOR_ESIGI:
+        raise Uyari(f"indeks var ama deneme araması zayıf sonuç verdi; yeniden kurun -> {komut}")
+    # Lab 3: kart ajanının aramasına başka kategoriden ya da gizli (ic) dokümandan parça gelmemeli
+    gelenler = ara("harcama itirazı otomatik kabul kriterleri hesap işletim ücreti", ["kart"], k=10)
+    if any(p["kategori"] != "kart" or p["gizlilik"] != "musteri" for p in gelenler):
+        raise Uyari("arama kategori/gizlilik filtresi uygulamıyor (Lab 3: rag/arama.py)")
+    return f"{indeks.ntotal} parça; deneme: {sonuc[0]['kaynak']} ({sonuc[0]['skor']:.2f})"
+
+
+def prompt_sablonlari():
+    """Hafta 4: kullanılan her şablon sürümü okunabiliyor ve yer tutucuları dolduruluyor mu?"""
+    from asistan.sablonlar import SABLON_KLASORU, SURUMLER, YER_TUTUCU, dosya_oku, surum_sec
+
+    secilen = []
+    for ad in SURUMLER:
+        surum = surum_sec(ad, "bulut")
+        yol = SABLON_KLASORU / ad / f"{surum}.md"
+        if not yol.exists():
+            raise RuntimeError(f"şablon dosyası yok: prompts/{ad}/{surum}.md (.env'deki SABLON_{ad.upper()}?)")
+        if not YER_TUTUCU.search(dosya_oku(yol)):
+            raise Uyari(f"prompts/{ad}/{surum}.md hiç yer tutucu içermiyor")
+        secilen.append(f"{ad}={surum}")
+    return ", ".join(secilen)
+
+
+def maskeleme():
+    """Hafta 4: maskeleme testleri (tests/test_maskeleme.py) geçiyor mu? Model ve servis gerekmez."""
+    sys.path.insert(0, str(PROJE_KOKU / "tests"))
+    import test_maskeleme
+
+    testler = [f for ad, f in vars(test_maskeleme).items() if ad.startswith("test_")]
+    for test in testler:
+        test()  # AssertionError -> ❌
+    # Lab 3: araç çıktısı modele gitmeden maskeleniyor mu?
+    from asistan.araclar import veri_olarak_etiketle
+    from asistan.maskeleme import tam_veri_bul
+
+    if tam_veri_bul(veri_olarak_etiketle("deneme", {"kart_no": "9999 0000 0000 0007"})):
+        raise Uyari(f"{len(testler)} test geçti, ama araç çıktısı modele maskesiz gidiyor (Lab 3: araclar.py)")
+    return f"{len(testler)} test geçti; araç çıktısı maskeli"
 
 
 def yerel_model_cagrisi():
@@ -157,6 +217,9 @@ if __name__ == "__main__":
     kontrol("Veri dosyaları", veri_dosyalari)
     kontrol("Mock API", mock_api)
     kontrol("Ollama modelleri", ollama_modelleri)
+    kontrol("Prosedür indeksi", prosedur_indeksi)
+    kontrol("Prompt şablonları", prompt_sablonlari)
+    kontrol("Maskeleme testleri", maskeleme)
     kontrol("Yerel model + ajan akışı", yerel_model_cagrisi)
     kontrol("Claude çağrısı", claude_cagrisi)
 
