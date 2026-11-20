@@ -1,3 +1,10 @@
+---
+kategori: kredi
+baslik: Kredi İşlemleri
+gizlilik: musteri
+guncelleme_tarihi: 2026-11-20
+---
+
 # PRS-KRD-001 Kredi İşlemleri
 
 > Kurgusal eğitim belgesi (Hafta 1). "Örnek Bank" adına uydurulmuştur; gerçek bir bankanın

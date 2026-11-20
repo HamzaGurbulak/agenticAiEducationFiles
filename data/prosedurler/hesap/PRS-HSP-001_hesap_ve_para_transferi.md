@@ -1,3 +1,10 @@
+---
+kategori: hesap
+baslik: Hesap İşlemleri ve Para Transferi
+gizlilik: musteri
+guncelleme_tarihi: 2026-11-20
+---
+
 # PRS-HSP-001 Hesap İşlemleri ve Para Transferi
 
 > Kurgusal eğitim belgesi (Hafta 1). "Örnek Bank" adına uydurulmuştur; gerçek bir bankanın

@@ -1,3 +1,10 @@
+---
+kategori: hesap
+baslik: Dijital Kanallar (Mobil Şube ve İnternet Şube)
+gizlilik: musteri
+guncelleme_tarihi: 2026-11-20
+---
+
 # PRS-DJT-001 Dijital Kanallar (Mobil Şube ve İnternet Şube)
 
 > Kurgusal eğitim belgesi (Hafta 1). "Örnek Bank" adına uydurulmuştur; gerçek bir bankanın

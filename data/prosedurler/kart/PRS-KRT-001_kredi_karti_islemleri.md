@@ -1,3 +1,10 @@
+---
+kategori: kart
+baslik: Kredi Kartı İşlemleri
+gizlilik: musteri
+guncelleme_tarihi: 2026-11-20
+---
+
 # PRS-KRT-001 Kredi Kartı İşlemleri
 
 > Kurgusal eğitim belgesi (Hafta 1). "Örnek Bank" adına uydurulmuştur; gerçek bir bankanın

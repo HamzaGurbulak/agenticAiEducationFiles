@@ -1,3 +1,10 @@
+---
+kategori: kart
+baslik: Kredi Harcama İtirazı
+gizlilik: musteri
+guncelleme_tarihi: 2026-11-20
+---
+
 # PRS-KRT-002 Kart Harcama İtirazı
 
 > Kurgusal eğitim belgesi (Hafta 1). "Örnek Bank" adına uydurulmuştur; gerçek bir bankanın
